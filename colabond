@@ -58,6 +58,24 @@ def display_help():
     print("  help      Show this help message")
 
 
+def signin():
+    # prompt for email and password
+    email = input("Email: ")
+    password = getpass.getpass("Password: ")
+    res = auth(email, password)
+    token = res["token"]
+
+    # create ".colabond" directory in user's home directory
+    user_dir = os.path.expanduser("~")
+    os.makedirs(os.path.join(user_dir, ".colabond"), exist_ok=True)
+
+    # write token to ".colabond/token"
+    with open(os.path.join(user_dir, ".colabond/token"), "w") as f:
+        f.write(token)
+
+    print("Successfully signed in")
+
+
 def require_auth(func):
     """
     function as decorator to ensure that the user is signed in
@@ -84,24 +102,6 @@ def get_token():
     with open(os.path.join(user_dir, ".colabond/token"), "r") as f:
         token = f.read()
     return token
-
-
-def signin():
-    # prompt for email and password
-    email = input("Email: ")
-    password = getpass.getpass("Password: ")
-    res = auth(email, password)
-    token = res["token"]
-
-    # create ".colabond" directory in user's home directory
-    user_dir = os.path.expanduser("~")
-    os.makedirs(os.path.join(user_dir, ".colabond"), exist_ok=True)
-
-    # write token to ".colabond/token"
-    with open(os.path.join(user_dir, ".colabond/token"), "w") as f:
-        f.write(token)
-
-    print("Successfully signed in")
 
 
 @require_auth
@@ -257,6 +257,7 @@ def full_sync():
         print(termcolor.colored(r.json()["message"], "red"))
 
 
+@require_auth
 def interactive():
     """Run the interactive shell"""
     print(BANNER)
