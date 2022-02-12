@@ -47,21 +47,27 @@ def auth(email, password):
 
 
 def display_help():
-    print("Usage: colabond.py <command>")
+    print("Usage: colabond <command>")
     print("Commands:")
-    print("  signin  Sign in to colabond")
-    print("  exec    Send a command the server for execution")
-    print("  init    Initialize a new colabond.yaml file")
-    print("  help    Show this help message")
+    print("  signin    Sign in to colabond")
+    print("  signout   Sign out of colabond")
+    print("  exec      Send a command the server for execution")
+    print("         -i Run in interactive mode")
+    print("  init      Initialize a new colabond.yaml file")
+    print("  help      Show this help message")
 
 
-# function as decorator to ensure that the user is signed in
 def require_auth(func):
+    """
+    function as decorator to ensure that the user is signed in
+    """
+
     def wrapper(*args, **kwargs):
         # check if the user is signed in
         user_dir = os.path.expanduser("~")
         if not os.path.exists(os.path.join(user_dir, ".colabond/token")):
-            print("You must sign in to use this command")
+            # print in red
+            print(termcolor.colored("You are not signed in", "red"))
             sys.exit(1)
 
         # if the user is signed in, execute the function
@@ -95,6 +101,14 @@ def signin():
         f.write(token)
 
     print("Successfully signed in")
+
+
+@require_auth
+def signout():
+    # remove the token file
+    user_dir = os.path.expanduser("~")
+    os.remove(os.path.join(user_dir, ".colabond/token"))
+    print("Successfully signed out")
 
 
 @require_auth
@@ -149,6 +163,7 @@ def init():
         f.write(yaml.dump(config))
 
 
+@require_auth
 def exec(command):
     if not command:
         print("Error: no command specified")
@@ -229,6 +244,28 @@ def full_sync():
         print(termcolor.colored(r.json()["message"], "red"))
 
 
+def interactive():
+    print(BANNER)
+    while True:
+        print(PROMPT)
+
+        command_to_send = input()
+
+        # Local commands
+        if command_to_send.strip() == "":
+            continue
+        elif command_to_send == "exit":
+            break
+        elif command_to_send == "full-sync":
+            full_sync()
+            print("Full sync complete")
+        elif command_to_send == "clear":
+            os.system("clear")
+            print(BANNER)
+        else:
+            exec(command_to_send)
+
+
 if __name__ == "__main__":
     args = sys.argv
 
@@ -237,37 +274,22 @@ if __name__ == "__main__":
         sys.exit(1)
 
     command = args[1]
-    if command not in ["init", "help", "exec", "signin"]:
-        print("Unknown command: {}".format(command))
-        print()
-        display_help()
-        sys.exit(1)
 
     if command == "init":
         init()
     elif command == "signin":
         signin()
+    elif command == "signout":
+        signout()
     elif command == "exec":
         if sys.argv[2] in ["-i", "--interactive"]:
-            print(BANNER)
-
-            while True:
-                print(PROMPT)
-
-                command_to_send = input()
-                if command_to_send.strip() == "":
-                    continue
-                elif command_to_send == "exit":
-                    break
-                elif command_to_send == "full-sync":
-                    full_sync()
-                elif command_to_send == "clear":
-                    os.system("clear")
-                    print(BANNER)
-                else:
-                    # TODO: partial sync
-                    # full_sync()
-                    exec(command_to_send)
+            interactive()
         else:
             command_to_send = input("Command to send: ")
             exec(command_to_send)
+
+    else:
+        print("Unknown command: {}".format(command))
+        print()
+        display_help()
+        sys.exit(1)
