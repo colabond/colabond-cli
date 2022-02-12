@@ -95,6 +95,25 @@ def require_auth(func):
     return wrapper
 
 
+def require_init(func):
+    """
+    function as decorator to ensure that the user has initialized their project
+    """
+
+    def wrapper(*args, **kwargs):
+        # check if the user has initialized their project
+        user_dir = os.path.expanduser("~")
+        if not os.path.exists(os.path.join(user_dir, ".colabond/project.yaml")):
+            # print in red
+            print(termcolor.colored("You have not initialized your project", "red"))
+            sys.exit(1)
+
+        # if the user has initialized their project, execute the function
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 @require_auth
 def get_token():
     # get token from user's ".colabond/token" file as string
@@ -165,6 +184,7 @@ def init():
         f.write(yaml.dump(config))
 
 
+@require_init
 @require_auth
 def exec(command):
     if not command:
@@ -212,6 +232,7 @@ def exec(command):
         print("\033[2m" + f"Command set: `{command}`" + "\033[0m")
 
 
+@require_init
 @require_auth
 def full_sync():
     """
@@ -297,8 +318,12 @@ if __name__ == "__main__":
     elif command == "signout":
         signout()
     elif command == "exec":
-        if sys.argv[2] in ["-i", "--interactive"]:
-            interactive()
+        if len(sys.argv) > 2:
+            if sys.argv[2] in ["-i", "--interactive"]:
+                interactive()
+            else:
+                print("Unknown option for exec")
+
         else:
             command_to_send = input("Command to send: ")
             exec(command_to_send)
