@@ -7,6 +7,7 @@ import os
 import sys
 import tarfile
 
+import fileutil
 import requests
 import termcolor
 import yaml
@@ -114,6 +115,7 @@ def signout():
 @require_auth
 def init():
     print("Initializing a new project")
+
     # prompt for email and password
     email = input("Email: ")
     password = getpass.getpass("Password: ")
@@ -212,18 +214,29 @@ def exec(command):
 
 @require_auth
 def full_sync():
-    import fileutil
+    """
+    Syncs the local files with the server fully. Update current file state
+    in .colabond/file_info.
+    """
 
     fst = fileutil.scan_current_file_state()
-    # create tarfile
+
+    # Update the file_info file with the current file state
+    with open(".colabond/file_info", "w") as f:
+        f.write(json.dumps(fst))
+
+    # create tarfile to hold all files in the project directory
     with tarfile.open(".colabond/files.tar.gz", "w:gz") as tar:
         for f, _ in fst.items():
             tar.add(f)
 
+    # Encode the tarfile as base64
+    # TODO: better file transfer instead of using base64
     with open(".colabond/files.tar.gz", "rb") as f:
         files = f.read()
         files = base64.b64encode(files).decode("utf-8")
-    # remove the tarfile
+
+    # remove the tarfile as we don't need it anymore
     os.remove(".colabond/files.tar.gz")
     url = HOST + "/api/v1/project_set_files"
 
@@ -245,6 +258,7 @@ def full_sync():
 
 
 def interactive():
+    """Run the interactive shell"""
     print(BANNER)
     while True:
         print(PROMPT)
