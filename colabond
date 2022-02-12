@@ -1,0 +1,273 @@
+#!/usr/bin/env python
+
+import base64
+import getpass
+import json
+import os
+import sys
+import tarfile
+
+import requests
+import termcolor
+import yaml
+
+# If windows, execute this statement to enable colors
+if os.name == "nt":
+    os.system("color")
+
+HOST = "https://colabond.co"
+
+
+BANNER = """
+╓──────────────────────────────────────────────────────────╖
+║        ___  __   __     __   ____   __   __ _  ____      ║
+║       / __)/  \ (  )   / _\ (  _ \ /  \ (  ( \(    \     ║
+║      ( (__(  O )/ (_/\/    \ ) _ ((  O )/    / ) D (     ║
+║       \___)\__/ \____/\_/\_/(____/ \__/ \_)__)(____/     ║
+║                                                          ║
+╟──────────────────────────────────────────────────────────╢
+│                    Interactive prompt                    │
+╚──────────────────────────────────────────────────────────╝
+"""
+
+PROMPT = "◎──────◎ Enter command:"
+
+
+def auth(email, password):
+    # find user by email and password
+    url = HOST + "/api/v1/auth"
+    data = {"email": email, "password": password}
+    r = requests.post(url, data=data)
+
+    if r.json().get("token", None):
+        return r.json()
+    else:
+        print("Invalid email or password")
+        sys.exit(1)
+
+
+def display_help():
+    print("Usage: colabond.py <command>")
+    print("Commands:")
+    print("  signin  Sign in to colabond")
+    print("  exec    Send a command the server for execution")
+    print("  init    Initialize a new colabond.yaml file")
+    print("  help    Show this help message")
+
+
+# function as decorator to ensure that the user is signed in
+def require_auth(func):
+    def wrapper(*args, **kwargs):
+        # check if the user is signed in
+        user_dir = os.path.expanduser("~")
+        if not os.path.exists(os.path.join(user_dir, ".colabond/token")):
+            print("You must sign in to use this command")
+            sys.exit(1)
+
+        # if the user is signed in, execute the function
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+@require_auth
+def get_token():
+    # get token from user's ".colabond/token" file as string
+    user_dir = os.path.expanduser("~")
+    with open(os.path.join(user_dir, ".colabond/token"), "r") as f:
+        token = f.read()
+    return token
+
+
+def signin():
+    # prompt for email and password
+    email = input("Email: ")
+    password = getpass.getpass("Password: ")
+    res = auth(email, password)
+    token = res["token"]
+
+    # create ".colabond" directory in user's home directory
+    user_dir = os.path.expanduser("~")
+    os.makedirs(os.path.join(user_dir, ".colabond"), exist_ok=True)
+
+    # write token to ".colabond/token"
+    with open(os.path.join(user_dir, ".colabond/token"), "w") as f:
+        f.write(token)
+
+    print("Successfully signed in")
+
+
+@require_auth
+def init():
+    print("Initializing a new project")
+    # prompt for email and password
+    email = input("Email: ")
+    password = getpass.getpass("Password: ")
+    project_id = input("Project id (from colabond dashboard): ")
+
+    auth_result = auth(email, password)
+    token = auth_result["token"]
+
+    # post request to check if project_id exists
+    data = {"project_id": project_id, "email": email, "token": token}
+    res = requests.post(HOST + "/api/v1/projects", data=data)
+    if not bool(res):
+        print("Project does not exist. Aborting.")
+        sys.exit(1)
+
+    config = {
+        "email": email,
+        "project_id": project_id,
+        "token": token,
+    }
+
+    # create ".colabond" directory in current directory
+    os.makedirs(".colabond", exist_ok=True)
+
+    # write a json file containing file name and modification time to ".colabond/file_info"
+    with open(".colabond/file_info", "w") as f:
+        # get a list of all files in the current directory recursively
+        files = []
+        for root, dirs, filenames in os.walk("."):
+            for filename in filenames:
+                if filename != "colabond.yaml":
+                    # if not child of ".colabond" or ".git"
+                    if not root.startswith(".colabond") and not root.startswith(".git"):
+                        filename = os.path.join(root, filename)
+                        modified_time = os.path.getmtime(filename)
+                        file_info = {
+                            "filename": filename,
+                            "modified_time": modified_time,
+                        }
+                        files.append(file_info)
+
+        # write the list of files to ".colabond/file_info" as json
+        f.write(json.dumps(files))
+
+    # Create a new colabond.yaml file
+    with open(".colabond/colabond.yaml", "w") as f:
+        f.write(yaml.dump(config))
+
+
+def exec(command):
+    if not command:
+        print("Error: no command specified")
+        sys.exit(1)
+
+    # make a POST request to the server
+    # use the project_id and email from the colabond.yaml file
+    with open(".colabond/colabond.yaml", "r") as f:
+        y = yaml.load(f, yaml.FullLoader)
+
+    project_id = y["project_id"]
+    email = y["email"]
+
+    # send .colabond/files.tar.gz
+    # TODO: INCREMENTAL UPLOAD
+    files = ""
+    if os.path.exists(".colabond/files.tar.gz"):
+        # read the file and convert to base64
+        import base64
+
+        with open(".colabond/files.tar.gz", "rb") as f:
+            files = f.read()
+            files = base64.b64encode(files).decode("utf-8")
+
+    # update project's execution_command to the command
+    url = HOST + "/api/v1/project_set_command"
+    token = get_token()
+    data = {
+        "project_id": project_id,
+        "email": email,
+        "command": command,
+        "files": files,
+        "token": token,
+    }
+    r = requests.post(url, data=data)
+
+    # if status is "failed", print the error message
+    if r.json()["status"] == "error":
+        # print in red
+        print(termcolor.colored(r.json()["message"], "red"))
+    else:
+        # if the request was successful, print the response
+        # Print in dimmed
+        print("\033[2m" + f"Command set: `{command}`" + "\033[0m")
+
+
+@require_auth
+def full_sync():
+    import fileutil
+
+    fst = fileutil.scan_current_file_state()
+    # create tarfile
+    with tarfile.open(".colabond/files.tar.gz", "w:gz") as tar:
+        for f, _ in fst.items():
+            tar.add(f)
+
+    with open(".colabond/files.tar.gz", "rb") as f:
+        files = f.read()
+        files = base64.b64encode(files).decode("utf-8")
+    # remove the tarfile
+    os.remove(".colabond/files.tar.gz")
+    url = HOST + "/api/v1/project_set_files"
+
+    # get email and project id from .colabond/colabond.yaml
+    with open(".colabond/colabond.yaml", "r") as f:
+        y = yaml.load(f, yaml.FullLoader)
+    project_id = y["project_id"]
+    email = y["email"]
+
+    # send .colabond/files.tar.gz
+    data = {
+        "project_id": project_id,
+        "files": files,
+        "email": email,
+    }
+    r = requests.post(url, data=data)
+    if r.json()["status"] == "error":
+        print(termcolor.colored(r.json()["message"], "red"))
+
+
+if __name__ == "__main__":
+    args = sys.argv
+
+    if len(args) < 2:
+        display_help()
+        sys.exit(1)
+
+    command = args[1]
+    if command not in ["init", "help", "exec", "signin"]:
+        print("Unknown command: {}".format(command))
+        print()
+        display_help()
+        sys.exit(1)
+
+    if command == "init":
+        init()
+    elif command == "signin":
+        signin()
+    elif command == "exec":
+        if sys.argv[2] in ["-i", "--interactive"]:
+            print(BANNER)
+
+            while True:
+                print(PROMPT)
+
+                command_to_send = input()
+                if command_to_send.strip() == "":
+                    continue
+                elif command_to_send == "exit":
+                    break
+                elif command_to_send == "full-sync":
+                    full_sync()
+                elif command_to_send == "clear":
+                    os.system("clear")
+                    print(BANNER)
+                else:
+                    # TODO: partial sync
+                    # full_sync()
+                    exec(command_to_send)
+        else:
+            command_to_send = input("Command to send: ")
+            exec(command_to_send)
