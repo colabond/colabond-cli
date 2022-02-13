@@ -4,6 +4,7 @@ import base64
 import getpass
 import json
 import os
+import readline
 import sys
 import tarfile
 
@@ -21,10 +22,10 @@ HOST = "https://colabond.co"
 
 BANNER = """
 ╓──────────────────────────────────────────────────────────╖
-║        ___  __   __     __   ____   __   __ _  ____      ║
-║       / __)/  \ (  )   / _\ (  _ \ /  \ (  ( \(    \     ║
-║      ( (__(  O )/ (_/\/    \ ) _ ((  O )/    / ) D (     ║
-║       \___)\__/ \____/\_/\_/(____/ \__/ \_)__)(____/     ║
+║            _____     __     __                __         ║
+║           / ___/__  / /__ _/ /  ___  ___  ___/ /         ║
+║          / /__/ _ \/ / _ `/ _ \/ _ \/ _ \/ _  /          ║
+║          \___/\___/_/\_,_/_.__/\___/_//_/\_,_/           ║
 ║                                                          ║
 ╟──────────────────────────────────────────────────────────╢
 │                    Interactive prompt                    │
@@ -50,12 +51,13 @@ def auth(email, password):
 def display_help():
     print("Usage: colabond <command>")
     print("Commands:")
-    print("  signin    Sign in to colabond")
-    print("  signout   Sign out of colabond")
-    print("  exec      Send a command the server for execution")
-    print("         -i Run in interactive mode")
-    print("  init      Initialize a new colabond.yaml file")
-    print("  help      Show this help message")
+    print("  connect    Connect to the project in colabond")
+    print("  exec       Send a command the server for execution")
+    print("         -i  Run in interactive mode")
+    print("  full-sync  Perform a full sync between local project and the server")
+    print("  help       Show this help message")
+    print("  signin     Sign in to colabond")
+    print("  signout    Sign out of colabond")
 
 
 def signin():
@@ -69,9 +71,10 @@ def signin():
     user_dir = os.path.expanduser("~")
     os.makedirs(os.path.join(user_dir, ".colabond"), exist_ok=True)
 
-    # write token to ".colabond/token"
-    with open(os.path.join(user_dir, ".colabond/token"), "w") as f:
-        f.write(token)
+    # write email and token to ".colabond/cred.yaml"
+    cred_file = os.path.join(user_dir, ".colabond/cred.yaml")
+    with open(cred_file, "w") as f:
+        yaml.dump({"email": email, "token": token}, f)
 
     print("Successfully signed in")
 
@@ -84,9 +87,13 @@ def require_auth(func):
     def wrapper(*args, **kwargs):
         # check if the user is signed in
         user_dir = os.path.expanduser("~")
-        if not os.path.exists(os.path.join(user_dir, ".colabond/token")):
+        if not os.path.exists(os.path.join(user_dir, ".colabond/cred.yaml")):
             # print in red
-            print(termcolor.colored("You are not signed in", "red"))
+            print(
+                termcolor.colored(
+                    "You are not signed in. Run 'colabond signin' first.", "red"
+                )
+            )
             sys.exit(1)
 
         # if the user is signed in, execute the function
@@ -95,17 +102,19 @@ def require_auth(func):
     return wrapper
 
 
-def require_init(func):
+def require_connected(func):
     """
     function as decorator to ensure that the user has initialized their project
     """
 
     def wrapper(*args, **kwargs):
         # check if the user has initialized their project
-        user_dir = os.path.expanduser("~")
-        if not os.path.exists(os.path.join(user_dir, ".colabond/project.yaml")):
-            # print in red
-            print(termcolor.colored("You have not initialized your project", "red"))
+        if not os.path.exists(".colabond/colabond.yaml"):
+            print(
+                termcolor.colored(
+                    "You have not connected your project. Run 'colabond connect'", "red"
+                )
+            )
             sys.exit(1)
 
         # if the user has initialized their project, execute the function
@@ -115,12 +124,12 @@ def require_init(func):
 
 
 @require_auth
-def get_token():
+def get_cred():
     # get token from user's ".colabond/token" file as string
     user_dir = os.path.expanduser("~")
-    with open(os.path.join(user_dir, ".colabond/token"), "r") as f:
-        token = f.read()
-    return token
+    with open(os.path.join(user_dir, ".colabond/cred.yaml"), "r") as f:
+        cred = yaml.load(f, Loader=yaml.FullLoader)
+    return cred
 
 
 @require_auth
@@ -132,28 +141,23 @@ def signout():
 
 
 @require_auth
-def init():
-    print("Initializing a new project")
+def connect():
+    print("Connecting to the project")
 
-    # prompt for email and password
-    email = input("Email: ")
-    password = getpass.getpass("Password: ")
     project_id = input("Project id (from colabond dashboard): ")
 
-    auth_result = auth(email, password)
-    token = auth_result["token"]
+    cred = get_cred()
 
     # post request to check if project_id exists
-    data = {"project_id": project_id, "email": email, "token": token}
+    data = {"project_id": project_id, "email": cred["email"], "token": cred["token"]}
     res = requests.post(HOST + "/api/v1/projects", data=data)
     if not bool(res):
         print("Project does not exist. Aborting.")
         sys.exit(1)
 
     config = {
-        "email": email,
+        "email": cred["email"],
         "project_id": project_id,
-        "token": token,
     }
 
     # create ".colabond" directory in current directory
@@ -184,7 +188,7 @@ def init():
         f.write(yaml.dump(config))
 
 
-@require_init
+@require_connected
 @require_auth
 def exec(command):
     if not command:
@@ -195,9 +199,6 @@ def exec(command):
     # use the project_id and email from the colabond.yaml file
     with open(".colabond/colabond.yaml", "r") as f:
         y = yaml.load(f, yaml.FullLoader)
-
-    project_id = y["project_id"]
-    email = y["email"]
 
     # send .colabond/files.tar.gz
     # TODO: INCREMENTAL UPLOAD
@@ -212,19 +213,19 @@ def exec(command):
 
     # update project's execution_command to the command
     url = HOST + "/api/v1/project_set_command"
-    token = get_token()
+    cred = get_cred()
+    project_id = y["project_id"]
     data = {
         "project_id": project_id,
-        "email": email,
+        "email": cred["email"],
         "command": command,
         "files": files,
-        "token": token,
+        "token": cred["token"],
     }
     r = requests.post(url, data=data)
 
     # if status is "failed", print the error message
     if r.json()["status"] == "error":
-        # print in red
         print(termcolor.colored(r.json()["message"], "red"))
     else:
         # if the request was successful, print the response
@@ -232,7 +233,7 @@ def exec(command):
         print("\033[2m" + f"Command set: `{command}`" + "\033[0m")
 
 
-@require_init
+@require_connected
 @require_auth
 def full_sync():
     """
@@ -311,22 +312,24 @@ if __name__ == "__main__":
 
     command = args[1]
 
-    if command == "init":
-        init()
+    if command == "connect":
+        connect()
     elif command == "signin":
         signin()
     elif command == "signout":
         signout()
+    elif command == "full-sync":
+        full_sync()
+        print("full-sync complete")
     elif command == "exec":
         if len(sys.argv) > 2:
             if sys.argv[2] in ["-i", "--interactive"]:
                 interactive()
             else:
-                print("Unknown option for exec")
-
+                exec(" ".join(sys.argv[2:]))
         else:
-            command_to_send = input("Command to send: ")
-            exec(command_to_send)
+            print("Error: 'exec' must be followed by a command")
+            sys.exit(1)
 
     else:
         print("Unknown command: {}".format(command))
