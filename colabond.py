@@ -278,6 +278,8 @@ def full_sync():
     r = requests.post(url, data=data)
     if r.json()["status"] == "error":
         print(termcolor.colored(r.json()["message"], "red"))
+        sys.exit(1)
+    print("Full sync completed")
 
 
 @require_auth
@@ -296,7 +298,6 @@ def interactive():
             break
         elif command_to_send == "full-sync":
             full_sync()
-            print("Full sync completed")
         elif command_to_send == "clear":
             os.system("clear")
             print(BANNER)
@@ -324,7 +325,6 @@ def main():
         signout()
     elif command == "full-sync":
         full_sync()
-        print("Full sync completed")
     elif command == "exec":
         if len(sys.argv) > 2:
             if sys.argv[2] in ["-i", "--interactive"]:
