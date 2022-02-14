@@ -296,7 +296,7 @@ def interactive():
             break
         elif command_to_send == "full-sync":
             full_sync()
-            print("Full sync complete")
+            print("Full sync completed")
         elif command_to_send == "clear":
             os.system("clear")
             print(BANNER)
@@ -315,13 +315,16 @@ def main():
 
     if command == "connect":
         connect()
+        print("Project connected")
+        full_sync()
+        print("Initial full sync completed")
     elif command == "signin":
         signin()
     elif command == "signout":
         signout()
     elif command == "full-sync":
         full_sync()
-        print("full-sync complete")
+        print("Full sync completed")
     elif command == "exec":
         if len(sys.argv) > 2:
             if sys.argv[2] in ["-i", "--interactive"]:
