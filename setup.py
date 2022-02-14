@@ -1,3 +1,4 @@
+from importlib_metadata import entry_points
 from setuptools import setup
 
 setup(
@@ -7,6 +8,10 @@ setup(
     author_email="hello@ghora.net",
     description="Colabond command-line tool",
     license="MIT",
-    py_modules=["fileutil"],
-    scripts=["colabond"],
+    py_modules=["fileutil", "colabond"],
+    entry_points={
+        "console_scripts": [
+            "colabond = colabond:main",
+        ]
+    },
 )

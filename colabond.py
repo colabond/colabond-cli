@@ -151,6 +151,7 @@ def connect():
     # post request to check if project_id exists
     data = {"project_id": project_id, "email": cred["email"], "token": cred["token"]}
     res = requests.post(HOST + "/api/v1/projects", data=data)
+
     if not bool(res):
         print("Project does not exist. Aborting.")
         sys.exit(1)
@@ -303,7 +304,7 @@ def interactive():
             exec(command_to_send)
 
 
-if __name__ == "__main__":
+def main():
     args = sys.argv
 
     if len(args) < 2:
