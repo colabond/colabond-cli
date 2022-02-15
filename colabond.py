@@ -60,6 +60,39 @@ def display_help():
     print("  signout    Sign out of colabond")
 
 
+# decorator to ensure that the project is running based on the project_id
+# in the colabond.yaml file
+def require_agent_run(func):
+    def wrapper(*args, **kwargs):
+        # First, ensure project is running
+        cred = get_cred()
+        project_id = yaml.load(open(".colabond/colabond.yaml", "r"), yaml.FullLoader)[
+            "project_id"
+        ]
+
+        # post request to check if project_id exists
+        data = {
+            "project_id": project_id,
+            "email": cred["email"],
+            "token": cred["token"],
+        }
+        res = requests.post(HOST + "/api/v1/projects", data=data)
+        res = res.json()
+
+        print(res)
+        if res["execution_status"] != "running":
+            print(
+                termcolor.colored(
+                    f"Colabond agent for id {project_id} is not running. Please ensure it is running in remote kernel.",
+                    "red",
+                )
+            )
+            raise Exception("Colabond agent is not running")
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 def signin():
     # prompt for email and password
     email = input("Email: ")
@@ -234,8 +267,9 @@ def exec(command):
         print("\033[2m" + f"Command set: `{command}`" + "\033[0m")
 
 
-@require_connected
 @require_auth
+@require_connected
+@require_agent_run
 def full_sync():
     """
     Syncs the local files with the server fully. Update current file state
