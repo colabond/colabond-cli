@@ -8,7 +8,7 @@ setup(
     author_email="hello@ghora.net",
     description="Colabond command-line tool",
     license="MIT",
-    py_modules=["fileutil", "colabond"],
+    py_modules=["colabond", "fileutil"],
     entry_points={
         "console_scripts": [
             "colabond = colabond:main",
