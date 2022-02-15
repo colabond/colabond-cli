@@ -77,7 +77,6 @@ def require_agent_run(func):
         res = requests.post(HOST + "/api/v1/projects", data=data)
         res = res.json()
 
-        print(res)
         if res["execution_status"] != "running":
             print(
                 termcolor.colored(
