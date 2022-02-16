@@ -153,6 +153,49 @@ def require_connected(func):
     return wrapper
 
 
+# check changes (deletion, addition, modification)
+def check_changes():
+    # read ".colabond/file_state.json"
+    with open(".colabond/file_info", "r") as f:
+        old_file_state = json.load(f)
+    # scan current directory recursively
+    current_file_state = fileutil.scan_current_file_state()
+    added_files = []
+    modified_files = []
+    deleted_files = []
+    for filename in current_file_state:
+        if filename not in old_file_state:
+            added_files.append(
+                {"filename": filename, "datetime": current_file_state[filename]}
+            )
+        elif current_file_state[filename] != old_file_state[filename]:
+            modified_files.append(
+                {"filename": filename, "datetime": current_file_state[filename]}
+            )
+    for filename in old_file_state:
+        if filename not in current_file_state:
+            deleted_files.append(
+                {"filename": filename, "datetime": old_file_state[filename]}
+            )
+    return added_files, modified_files, deleted_files
+
+
+def commit_changes(added_files, modified_files, deleted_files):
+    # read ".colabond/file_state.json"
+    with open(".colabond/file_info", "r") as f:
+        old_file_state = json.load(f)
+    # update old_file_state
+    for added_file in added_files:
+        old_file_state[added_file["filename"]] = added_file["datetime"]
+    for modified_file in modified_files:
+        old_file_state[modified_file["filename"]] = modified_file["datetime"]
+    for deleted_file in deleted_files:
+        del old_file_state[deleted_file["filename"]]
+    # (re)write ".colabond/file_state.json"
+    with open(".colabond/file_info", "w") as f:
+        json.dump(old_file_state, f)
+
+
 @require_auth
 def get_cred():
     # get token from user's ".colabond/token" file as string
@@ -231,26 +274,53 @@ def exec(command):
     with open(".colabond/colabond.yaml", "r") as f:
         y = yaml.load(f, yaml.FullLoader)
 
-    # send .colabond/files.tar.gz
-    # TODO: INCREMENTAL UPLOAD
+    cred = get_cred()
+    project_id = y["project_id"]
+
+    # get file changes
+    added_files, modified_files, deleted_files = check_changes()
+    if len(added_files) + len(modified_files) + len(deleted_files) > 0:
+        print("\nCommitting changes...")
+    for f in added_files:
+        print(termcolor.colored("[+] " + f["filename"][2:], "green"))
+    for f in modified_files:
+        print(termcolor.colored("[M] " + f["filename"][2:], "yellow"))
+    for f in deleted_files:
+        print(termcolor.colored("[-] " + f["filename"][2:], "red"))
+    commit_changes(added_files, modified_files, deleted_files)
+
+    # create .colabond/files.tar.gz from added_files and modified_files
+    with tarfile.open(".colabond/files.tar.gz", "w:gz") as tar:
+        for f in added_files:
+            tar.add(f["filename"])
+        for f in modified_files:
+            tar.add(f["filename"])
+
+    # if .colabond/files.tar.gz exists, open it and convert to base64
     files = ""
     if os.path.exists(".colabond/files.tar.gz"):
-        # read the file and convert to base64
-        import base64
-
         with open(".colabond/files.tar.gz", "rb") as f:
             files = f.read()
             files = base64.b64encode(files).decode("utf-8")
 
+    # if there is any file changes, send them to the server
+    if len(added_files) + len(modified_files) + len(deleted_files) > 0:
+        url = HOST + "/api/v1/project_set_files"
+        # send .colabond/files.tar.gz
+        data = {
+            "project_id": project_id,
+            "files": files,
+            "email": cred["email"],
+        }
+        r = requests.post(url, data=data)
+
     # update project's execution_command to the command
     url = HOST + "/api/v1/project_set_command"
-    cred = get_cred()
-    project_id = y["project_id"]
     data = {
         "project_id": project_id,
         "email": cred["email"],
         "command": command,
-        "files": files,
+        # "files": files,
         "token": cred["token"],
     }
     r = requests.post(url, data=data)
@@ -261,7 +331,11 @@ def exec(command):
     else:
         # if the request was successful, print the response
         # Print in dimmed
-        print("\033[2m" + f"Command set: `{command}`" + "\033[0m")
+        print("\033[2m" + f"\nCommand set: `{command}`" + "\033[0m")
+
+        # remove .colabond/files.tar.gz if it exists since it is no longer needed
+        if os.path.exists(".colabond/files.tar.gz"):
+            os.remove(".colabond/files.tar.gz")
 
 
 @require_auth
