@@ -6,7 +6,7 @@ import readline
 import sys
 import tarfile
 
-import fileutil
+import colabond.fileutil as fileutil
 import requests
 import termcolor
 import yaml

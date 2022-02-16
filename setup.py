@@ -8,16 +8,16 @@ with open("requirements.txt", encoding="utf-8") as f:
 
 setup(
     name="colabond",
-    version="0.1.0",
+    version="0.1.1",
     author="Aria Ghora Prabono",
     author_email="hello@ghora.net",
     description="Colabond command-line tool",
     license="MIT",
-    py_modules=["colabond", "fileutil"],
+    packages=["colabond"],
     install_requires=requires,
     entry_points={
         "console_scripts": [
-            "colabond = colabond:main",
+            "colabond = colabond.colabond:main",
         ]
     },
 )
