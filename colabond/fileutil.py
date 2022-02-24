@@ -7,7 +7,7 @@ def scan_current_file_state():
     for root, dirs, files in os.walk("."):
         for file in files:
             # get only root directory from root
-            root_parts = root.split("/")
+            root_parts = os.path.split(root)
 
             if len(root_parts) > 1:
                 root_dir = root_parts[1]
